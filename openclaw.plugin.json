@@ -1,0 +1,38 @@
+{
+  "id": "openclaw-newapi-balance",
+  "name": "余额与消费查询",
+  "version": "0.2.0",
+  "description": "自动复用 Agent 凭据，只读查询余额、近期记录和指定日期可查消费。",
+  "categories": ["integrations"],
+  "activation": { "onStartup": true },
+  "contracts": { "tools": ["newapi_balance", "newapi_usage"] },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "providers": {
+        "type": "object",
+        "description": "允许查询的 OpenClaw 供应商 ID。地址和凭据仍从供应商配置读取。",
+        "propertyNames": { "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$" },
+        "additionalProperties": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "accountBilling": { "type": "boolean", "default": false,
+            "description": "仅在管理员确认 new-api DisplayTokenStatEnabled=false 后设为 true。" } }
+        }
+      },
+      "allowedSenders": {
+        "type": "array", "default": [],
+        "items": {
+          "type": "object", "additionalProperties": false, "required": ["channel", "senderId"],
+          "properties": {
+            "channel": { "type": "string", "minLength": 1, "pattern": "^[^*]+$" },
+            "senderId": { "type": "string", "minLength": 1, "pattern": "^[^*]+$" },
+            "agentIds": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "^[^*]+$" } }
+          }
+        }
+      },
+      "cacheSeconds": { "type": "integer", "minimum": 10, "maximum": 300, "default": 60 },
+      "timeoutMs": { "type": "integer", "minimum": 1000, "maximum": 15000, "default": 8000 }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "openclaw-newapi-balance",
+  "version": "0.2.0",
+  "description": "Read-only new-api account balance and usage tools for OpenClaw",
+  "type": "module",
+  "license": "MIT",
+  "author": { "name": "freeleepm", "url": "https://github.com/freeleepm" },
+  "repository": { "type": "git", "url": "git+https://github.com/freeleepm/openclaw-newapi-balance.git" },
+  "homepage": "https://github.com/freeleepm/openclaw-newapi-balance#readme",
+  "bugs": { "url": "https://github.com/freeleepm/openclaw-newapi-balance/issues" },
+  "engines": { "node": ">=24.16.0 <25 || >=26.1.0" },
+  "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE"],
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": { "minGatewayVersion": "2026.9.8", "pluginApi": ">=2026.9.8" },
+    "build": { "openclawVersion": "2026.9.9", "pluginSdkVersion": "2026.9.9" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": { "openclaw": ">=2026.9.8" },
+  "peerDependenciesMeta": { "openclaw": { "optional": true } },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "openclaw": "2026.9.9",
+    "typescript": "~5.9.3"
+  }
+}

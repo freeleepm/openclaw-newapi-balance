@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.tgz
+.env
+.env.*
+*.log
+coverage/
+.DS_Store
+.artifacts/
+
+# Private, machine-specific operations history and one-off maintenance scripts.
+/DEPLOYMENT.md
+/scripts/
+*.pem
+*.key
+*.sqlite*
+*.db
+*.bak
