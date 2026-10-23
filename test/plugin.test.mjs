@@ -56,6 +56,39 @@ function integration(overrides = {}) {
   return { handlers: createHandlers(api, fetcher, host), config, queries, credentials };
 }
 
+test('platform scope automatically covers provider aliases without sharing keys', async () => {
+  const f = integration();
+  const settings = f.config.plugins.entries['openclaw-newapi-balance'].config;
+  settings.platforms = { 'https://b.example/v1': { billingScope: 'account' } };
+  delete settings.providers.companyB;
+  const result = await f.handlers.tools({ config: f.config, agentId: 'a', messageChannel: 'telegram', requesterSenderId: '123',
+    sessionKey: 'agent:a:telegram:direct:123', activeModel: { provider: 'companyB' }, resolveApiKeyForProvider: async () => 'sk-own-b' })[0].execute('call', {});
+  assert.equal(result.details.account.available, 20);
+  assert.ok(f.queries.filter(q => q.auth).every(q => q.auth === 'Bearer sk-own-b'));
+  assert.ok(f.queries.every(q => q.url.startsWith('https://b.example/')));
+});
+
+test('platform policy overrides legacy flags in both directions', async () => {
+  for (const scope of ['account', 'token']) {
+    const f = integration();
+    const settings = f.config.plugins.entries['openclaw-newapi-balance'].config;
+    settings.providers.companyA.accountBilling = scope !== 'account';
+    settings.platforms = { 'https://a.example/': { billingScope: scope } };
+    const r = await f.handlers.command({ config: f.config, agentId: 'a', channel: 'telegram', senderId: '123', sessionKey: 'agent:a:telegram:direct:123', isAuthorizedSender: true });
+    assert.equal(f.queries.some(q => q.url.includes('/billing/')), scope === 'account');
+    assert.doesNotMatch(r.text, /管理员尚未确认|兼容账单/);
+  }
+});
+
+test('platform matching rejects other hosts, ports, prefixes, unsafe URLs and duplicate roots', () => {
+  const config = parseConfig({ platforms: { 'https://a.example/tenant/v1': { billingScope: 'account' } } });
+  for (const baseUrl of ['https://a.example/', 'https://a.example/other/v1', 'https://a.example:444/tenant/v1', 'https://a.example.evil/tenant/v1']) {
+    assert.throws(() => selectProvider({ config, activeProvider: 'new', providerConfigs: { new: { baseUrl } } }), { code: 'PROVIDER' });
+  }
+  assert.equal(selectProvider({ config, activeProvider: 'new', providerConfigs: { new: { baseUrl: 'https://a.example/tenant/v1/' } } }), 'new');
+  for (const platforms of [{ 'http://a.example': { billingScope: 'account' } }, { 'https://a.example': {} }, { 'https://a.example': { billingScope: 'account' }, 'https://a.example/v1': { billingScope: 'token' } }]) assert.throws(() => parseConfig({ platforms }), { code: 'CONFIG' });
+});
+
 test('direct command reuses session-selected provider/key and makes no LLM request', async () => {
   const fixture = integration({ getSessionEntry: () => ({ chatType: 'direct', providerOverride: 'companyB' }) });
   const result = await fixture.handlers.command({ config: fixture.config, agentId: 'a', channel: 'telegram', senderId: '123',

@@ -2,9 +2,27 @@
 
 独立的 OpenClaw 原生插件，自动复用当前 Agent 的模型 Key，调用 new-api 现有只读接口。**不修改 new-api、不参与充值或扣费、不直接访问 new-api 数据库、不另起 HTTP 服务。**
 
-版本：`0.2.0` · 作者：[freeleepm](https://github.com/freeleepm) · [MIT 许可证](LICENSE)。
+版本：`0.4.0` · 作者：[freeleepm](https://github.com/freeleepm) · [MIT 许可证](LICENSE)。
 
 这是第三方插件，非 OpenClaw 或 new-api 官方项目。项目地址：[freeleepm/openclaw-newapi-balance](https://github.com/freeleepm/openclaw-newapi-balance)。
+
+## 0.4.0：同一平台统一设置
+
+在插件配置中增加 `platforms`，由管理员按平台确认一次返回口径。例如：
+
+```json
+{
+  "platforms": {
+    "https://your-platform.example/v1": { "billingScope": "account" }
+  }
+}
+```
+
+同一 OpenClaw 实例里，使用此 API 地址的所有供应商与 Agent 自动复用该设置，不必逐个填写 `accountBilling`。匹配包括协议、主机、端口和部署路径，仅规范化末尾 `/v1` 与斜杠；不按模糊域名匹配。地址必须为 HTTPS。平台级设置优先于旧供应商设置；旧 `providers` 配置继续兼容。
+
+平台配置只共享**查询口径**，不共享 Key：每个 Agent 仍通过自己的当前会话及凭据解析查询。未知平台不会自动获准查询。`billingScope: "token"` 表示只能显示 Key 信息，不将其误报为账户余额。管理员需确认 new-api 的实际设置；本插件不修改 new-api，平台改动口径后需同步更新配置。
+
+本次保留 0.3.0 的积分不足提示、成员名单和群聊限制。升级只作用于安装插件的实例，不会自动同步其他机器。安装包文件名为 `openclaw-newapi-balance-0.4.0.tgz`。
 
 ## 使用效果
 
@@ -39,8 +57,8 @@
 
 ## 支持范围
 
-- 支持基线：OpenClaw **2026.9.8**；0.2.0 在 **2026.9.9** SDK 下通过42项测试，并在 **2026.9.8** Gateway 上完成直接命令验收。当前构建使用 `2026.9.9`，不保证所有未来版本无需适配。Node.js `>=24.16.0 <25` 或 `>=26.1.0`。
-- new-api 接口基线：`v1.0.0-rc.41`。其他版本需核对计费字段含义。
+- 最低兼容声明：OpenClaw **2026.9.8**；当前构建使用 **2026.9.9** SDK。0.4.0 已通过52项测试，在 **2026.10.1** Gateway 上完成14个 Agent 的管理员直接命令验收，模型消耗为0。不保证所有未来版本无需适配。Node.js `>=24.16.0 <25` 或 `>=26.1.0`。
+- new-api 接口基线：`v1.0.0-rc.41`；0.4.0 的远程余额验收使用 `rc.45`。其他版本需核对计费字段含义，不能仅凭版本号假定接口始终返回账号余额。
 - `/balance`：账号可用余额、账号累计消耗、当前 Key 累计消耗和额度。
 - `/balance usage`：最近最多 10 条消耗/退款记录。
 - `/balance today`、`yesterday`、`month`、`last7days`：今日、昨日、本月、近7天的可查消费；也支持“今日”“昨日”“本月”“近7天”。
@@ -78,7 +96,7 @@ cd openclaw-newapi-balance
 npm ci --ignore-scripts
 npm test
 npm pack
-openclaw plugins install ./openclaw-newapi-balance-0.2.0.tgz --force --accept-capabilities
+openclaw plugins install ./openclaw-newapi-balance-0.4.0.tgz --force --accept-capabilities
 ```
 
 ### 2. 合并授权配置
@@ -92,8 +110,8 @@ openclaw plugins install ./openclaw-newapi-balance-0.2.0.tgz --force --accept-ca
       "openclaw-newapi-balance": {
         "enabled": true,
         "config": {
-          "providers": {
-            "your-newapi-provider": { "accountBilling": false }
+          "platforms": {
+            "https://your-platform.example/v1": { "billingScope": "account" }
           },
           "allowedSenders": [
             { "channel": "telegram", "senderId": "YOUR_TELEGRAM_USER_ID", "agentIds": ["YOUR_AGENT_ID"] }
@@ -109,15 +127,24 @@ openclaw plugins install ./openclaw-newapi-balance-0.2.0.tgz --force --accept-ca
 
 如果设置了 `plugins.allow`，还需加入 `openclaw-newapi-balance`。如 Agent 设置了严格的工具白名单，也需允许这两个工具或插件。官方安装流程若提示已实时应用，无需重复启动另一个 Gateway；需要重启时，使用原有服务管理方式，例如 systemd 或 launchd。
 
-`providers` 的键必须与现有 `models.providers` ID 一致；地址和 Key 仍由 OpenClaw 管理。只支持 HTTPS，拒绝重定向，不允许工具输入任意地址。支持 `/v1` 及部署路径前缀。
+将示例 URL 替换为现有 `models.providers` 中的真实 `baseUrl`，成员占位符替换为真实渠道 ID。`platforms` 的配置位于插件的 **`config` 内**，不是 OpenClaw 顶层。同一平台可有多个供应商名称，不必逐个加入 `providers`。地址和 Key 仍由 OpenClaw 管理；插件配置不保存 Key。只支持 HTTPS，拒绝重定向，支持部署路径前缀。
 
-**`accountBilling: true` 是管理员的明确确认，不是自动检测结果。** 只有确认 new-api `DisplayTokenStatEnabled=false`、兼容 billing 接口返回账号额度时才启用。若设置改变，必须同步将此项关闭；不确认时仅显示 Key 信息，避免把 Key 额度误标为企业余额。
+**`billingScope: "account"` 是管理员对平台的一次性确认，不是自动探测结果。** 只有确认 new-api `DisplayTokenStatEnabled=false`、兼容账单接口返回账号额度时才使用。若接口返回 Key 额度，使用 `"token"`，此时仅查询 Key 信息。平台变更口径后需同步更新插件配置，不要为了适配插件而修改 new-api 的计费设置。
 
 不确定成员身份时，保留 `allowedSenders: []`，不要使用通配符。
 
-上例默认 `accountBilling: false`，先只查 Key 信息。确认账户接口口径后才能设为 `true`；不要为了适配插件而修改 new-api 的计费配置。飞书成员示例为 `{ "channel": "feishu", "senderId": "YOUR_FEISHU_OPEN_ID" }`，应使用当前机器人所识别的真实发送者标识，不能填昵称。
+飞书成员示例为 `{ "channel": "feishu", "senderId": "YOUR_FEISHU_OPEN_ID" }`，应使用当前机器人所识别的真实发送者标识，不能填昵称。示例中的 `agentIds` 是可选限制：需要同一成员查询多个 Agent 时，添加相应 Agent ID，或在确认授权范围后省略此字段。
 
-### 3. 验证
+### 从旧配置升级
+
+1. 备份原插件与 OpenClaw 配置，安装0.4.0包。
+2. 在原插件 `config` 中合并 `platforms`，保留 `allowedSenders`、缓存参数及已有 `quotaNotice`，不要用示例覆盖整个配置。
+3. 平台匹配时，`billingScope` 优先于旧 `providers.<供应商>.accountBilling`。没有平台匹配时，仍兼容旧配置；新配置不需要逐个填写 `accountBilling`。
+4. 每个独立 OpenClaw 实例都需要安装和配置；不会自动同步其他机器。按下面的方法验证每个需要查询的 Agent。
+
+如果启用了可选的积分不足提示，先保留旧 `providers` 项：该提示模块目前仍按供应商 ID 筛选，详见文末说明。它与余额查询的平台匹配是两个独立功能。
+
+### 验证安装
 
 ```sh
 openclaw config validate --json
@@ -192,6 +219,13 @@ openclaw plugins list
 
 在授权私聊或管理控制端分别运行 `/balance`、`/balance usage`。若报“无法确认私聊/身份”，检查渠道是否提供可信会话、发送者上下文及成员配置，不要通过放宽到所有人解决。若报“多个凭据”，先明确选择凭据；若报 429，等待显示的重试时间。
 
+常见问题：
+
+- **“当前平台暂未开通账户余额查询”**：检查该 Agent 实际选中的供应商 `baseUrl` 是否匹配 `platforms`，以及已确认的平台口径是否为 `account`。不要只检查主 Agent；会话中切换模型也会改变查询对象。
+- **新机器人不能查**：检查它所在的 OpenClaw 实例是否已升级，并检查成员 `agentIds` 是否限制了该机器人。
+- **配置更新后仍是旧提示**：检查正式服务使用的插件路径和运行版本，确认配置已应用；需要重启时使用原服务管理器，不另起实例。
+- **不同机器人余额相同**：可能属于同一账号，或复用了同一个 Key；平台配置本身不会把不同 Key 合并。
+
 卸载前可先将插件 `enabled` 设为 `false` 并按部署方式重启 Gateway；随后使用 `openclaw plugins uninstall openclaw-newapi-balance`，按 CLI 提示移除插件记录。不会删除 new-api 数据或模型 Key。保留安装前备份，以便恢复 OpenClaw 配置。
 
 升级前备份原插件和配置，再使用经过审核的新包执行安装，核对授权名单和模型配置未变。失败时恢复旧包及备份配置；不需要回滚或改动 new-api。
@@ -214,3 +248,35 @@ npm pack --dry-run
 ## 许可证
 
 Copyright © 2026 [freeleepm](https://github.com/freeleepm)。按 [MIT](LICENSE) 许可证开源；使用和分发时保留版权及许可声明。
+
+
+## 可选：账户积分不足提示（0.3.0 起支持）
+
+在原插件配置中新增：
+
+```json
+{
+  "providers": { "your-newapi-provider": {} },
+  "quotaNotice": {
+    "enabled": true,
+    "message": "积分不足，请联系管理员充值。"
+  }
+}
+```
+
+上述字段合并到插件 `config`，不要删除已有 `platforms` 和授权名单。提示模块目前只匹配 `providers` 中明确列出的供应商 ID，因此仅配置平台即可查余额，但若要替换该供应商的积分不足错误，还须列出它的 ID。平台口径优先，所以这里不需要重复设置 `accountBilling`。
+
+并在 `plugins.entries.openclaw-newapi-balance.hooks` 中配置 `allowConversationAccess: true`。
+该权限用于读取 SDK 生成的失败消息；本模块不扫描历史会话、不保存聊天内容或 Key。
+未启用时保持原行为。通知面向正常获得渠道回复的用户；账务明细查询权限保持原有配置。
+
+实际复现基线为 new-api rc.43：账户零余额返回 HTTP 403 / `insufficient_user_quota`。
+当前 OpenClaw 模型适配器会丢弃 JSON code，保留 HTTP 状态和本地化 message；因此只匹配已验证的严格中英文账户错误格式，不使用泛化 billing、403 或“余额不足”关键词。
+Key 零额度在该版本可能返回与失效 Key 一样的 HTTP 401 / Invalid token，无法可靠区分，故不映射为充值提示。
+
+本模块观察当前模型尝试，按 sessionKey/runId 关联新产生的失败 assistant 消息，仅替换最终 `isError` 回复。
+备用模型成功、普通模型文本、用户输入、历史错误及没有可靠关联的投递保持原样。
+状态仅保存内存，最多512项，10分钟过期。提示不包含原错误、余额数字或平台信息。
+充值后新模型尝试重新判断，不使用“已欠费”永久锁定状态；未新增余额轮询。
+
+无需为测试耗尽真实余额；验收使用独立网络命名空间、独立 SQLite 和虚构账号，禁止触及生产账号及上游计费。

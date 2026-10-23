@@ -150,7 +150,7 @@ export class NewApiClient {
         result.account = { available: number(subscription.hard_limit_usd) - used, used, approximate: true };
       });
       else if (!c.accountBilling) result.issues.push({ section: "account", code: "SCOPE_UNCONFIRMED",
-        message: "管理员尚未确认兼容账单接口返回账号额度，暂不将其标为账号余额。" });
+        message: "当前平台暂未开通账户余额查询，请联系管理员；当前 Key 用量仍可查询。" });
     } else {
       await attempt("recent", async () => {
         const logs = record(await this.get(root, "api/log/token", c.apiKey)).data;

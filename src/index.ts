@@ -4,6 +4,7 @@ import { resolveAgentDir } from "openclaw/plugin-sdk/agent-scope-runtime";
 import { getSessionEntry, type SessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { ensureAuthProfileStore, listProfilesForProvider } from "openclaw/plugin-sdk/provider-auth";
 import { resolveApiKeyForProvider } from "openclaw/plugin-sdk/agent-runtime";
+import { registerQuotaNotice } from "./quota-notice.js";
 import { apiRoot, BalanceError, parseConfig, PLUGIN_ID, publicError, type PluginConfig } from "./config.js";
 import { formatSnapshot, NewApiClient, type Credential } from "./client.js";
 import { assertAccess, type Identity } from "./policy.js";
@@ -32,9 +33,12 @@ export function selectProvider(input: {
   activeProvider?: string;
   sessionProvider?: string;
   defaultProvider?: string;
+  providerConfigs?: Record<string, { baseUrl?: string }>;
 }): string {
   const provider = input.activeProvider || input.sessionProvider || input.defaultProvider;
-  if (!provider || !Object.hasOwn(input.config.providers, provider)) {
+  const baseUrl = provider ? input.providerConfigs?.[provider]?.baseUrl : undefined;
+  const platformAllowed = baseUrl ? Object.hasOwn(input.config.platforms, apiRoot(baseUrl)) : false;
+  if (!provider || (!Object.hasOwn(input.config.providers, provider) && !platformAllowed)) {
     throw new BalanceError("PROVIDER", "当前模型暂不支持余额查询，请先切换到已开通查询的模型。");
   }
   return provider;
@@ -64,7 +68,7 @@ export function createHandlers(api: OpenClawPluginApi, fetcher: typeof fetch = f
     invocation.assertCurrent?.();
     const defaultModel = api.runtime.modelConfig.resolveDefaultModelForAgent({ cfg: config, agentId });
     const provider = selectProvider({ config: settings, activeProvider: invocation.activeProvider,
-      sessionProvider: entry?.providerOverride, defaultProvider: defaultModel.provider });
+      sessionProvider: entry?.providerOverride, defaultProvider: defaultModel.provider, providerConfigs: config.models?.providers });
     const providerConfig = config.models?.providers?.[provider];
     if (!providerConfig?.baseUrl) throw new BalanceError("CONFIG", "供应商没有明确的 API 地址，无法查询。");
     apiRoot(providerConfig.baseUrl);
@@ -91,7 +95,8 @@ export function createHandlers(api: OpenClawPluginApi, fetcher: typeof fetch = f
       throw new BalanceError("CREDENTIAL", "未找到可用的模型凭据，请联系管理员检查配置；无需发送 Key。");
     }
     const credential: Credential = { provider, baseUrl: providerConfig.baseUrl, apiKey,
-      accountBilling: settings.providers[provider]!.accountBilling };
+      accountBilling: settings.platforms[apiRoot(providerConfig.baseUrl)]?.billingScope === "account" ||
+        (!Object.hasOwn(settings.platforms, apiRoot(providerConfig.baseUrl)) && settings.providers[provider]?.accountBilling === true) };
     const result = await client.query(credential, mode, signal, period);
     signal?.throwIfAborted();
     invocation.assertCurrent?.();
@@ -157,6 +162,7 @@ export default definePluginEntry({
   configSchema: { parse: parseConfig },
   register(api: OpenClawPluginApi) {
     const handlers = createHandlers(api);
+    registerQuotaNotice(api);
     api.registerCommand({ name: "balance", description: "查余额；today 今日消费；month 本月消费；usage 查记录或日期（仅授权私聊）",
       acceptsArgs: true, requireAuth: true, handler: handlers.command });
     api.registerTool(handlers.tools, { names: ["newapi_balance", "newapi_usage"] });

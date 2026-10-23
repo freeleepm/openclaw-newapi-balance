@@ -6,10 +6,12 @@ export interface Member {
   agentIds?: string[];
 }
 export interface PluginConfig {
+  platforms: Record<string, { billingScope: "account" | "token" }>;
   providers: Record<string, { accountBilling: boolean }>;
   allowedSenders: Member[];
   cacheSeconds: number;
   timeoutMs: number;
+  quotaNotice: { enabled: boolean; message: string };
 }
 
 export class BalanceError extends Error {
@@ -22,6 +24,17 @@ export class BalanceError extends Error {
 export function parseConfig(raw: unknown): PluginConfig {
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const providers: PluginConfig["providers"] = {};
+  const platforms: PluginConfig["platforms"] = {};
+  if (value.platforms !== undefined) {
+    if (!value.platforms || typeof value.platforms !== "object" || Array.isArray(value.platforms)) throw new BalanceError("CONFIG", "平台查询配置无效。");
+    for (const [url, rawSettings] of Object.entries(value.platforms)) {
+      const scope = rawSettings && typeof rawSettings === "object" ? (rawSettings as Record<string, unknown>).billingScope : undefined;
+      if (scope !== "account" && scope !== "token") throw new BalanceError("CONFIG", "平台余额口径必须明确设置。");
+      const root = apiRoot(url);
+      if (Object.hasOwn(platforms, root)) throw new BalanceError("CONFIG", "同一平台存在重复配置，请合并后重试。");
+      platforms[root] = { billingScope: scope };
+    }
+  }
   if (value.providers && typeof value.providers === "object" && !Array.isArray(value.providers)) {
     for (const [id, options] of Object.entries(value.providers)) {
       if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$/.test(id) || !options || typeof options !== "object") {
@@ -46,7 +59,13 @@ export function parseConfig(raw: unknown): PluginConfig {
   }
   const bounded = (v: unknown, fallback: number, min: number, max: number) =>
     typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : fallback;
-  return { providers, allowedSenders, cacheSeconds: bounded(value.cacheSeconds, 60, 10, 300),
+  const notice = value.quotaNotice && typeof value.quotaNotice === "object"
+    ? value.quotaNotice as Record<string, unknown> : {};
+  const message = notice.message === undefined ? "积分不足，请联系管理员充值。" : notice.message;
+  if (typeof message !== "string" || !message.trim() || message.length > 300 || /sk-[A-Za-z0-9_-]+/.test(message)) {
+    throw new BalanceError("CONFIG", "积分不足提示文案无效。");
+  }
+  return { platforms, providers, allowedSenders, quotaNotice: { enabled: notice.enabled === true, message: message.trim() }, cacheSeconds: bounded(value.cacheSeconds, 60, 10, 300),
     timeoutMs: bounded(value.timeoutMs, 8000, 1000, 15000) };
 }
 
